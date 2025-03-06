@@ -1,11 +1,12 @@
-from flask import Flask, request, jsonify, Response, send_file
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, FileResponse
 import yt_dlp
 import tempfile
 import os
 import re
 from pathlib import Path
 
-app = Flask(__name__)
+app = FastAPI()
 
 def sanitize_filename(filename):
     # Remove invalid characters and limit length
@@ -33,33 +34,33 @@ def get_video_info(url):
         except Exception as e:
             raise Exception(f"Failed to fetch video info: {str(e)}")
 
-@app.route('/')
-def index():
-    return app.send_static_file('index.html')
+@app.get("/")
+async def index():
+    return FileResponse('static/index.html')
 
-@app.route('/get-info', methods=['POST'])
-def fetch_video_info():
+@app.post("/get-info")
+async def fetch_video_info(request: Request):
     try:
-        data = request.get_json()
+        data = await request.json()
         url = data.get('url')
         
         if not url:
-            return jsonify({'error': 'URL is required'}), 400
+            raise HTTPException(status_code=400, detail="URL is required")
             
         info = get_video_info(url)
-        return jsonify(info)
+        return JSONResponse(content=info)
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.route('/download', methods=['POST'])
-def download_video():
+@app.post("/download")
+async def download_video(request: Request):
     try:
-        data = request.get_json()
+        data = await request.json()
         url = data.get('url')
         
         if not url:
-            return jsonify({'error': 'URL is required'}), 400
+            raise HTTPException(status_code=400, detail="URL is required")
 
         # Create a temporary directory for downloading
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -76,14 +77,11 @@ def download_video():
                 filename = ydl.prepare_filename(info)
                 
                 # Stream the file to the client
-                return send_file(
+                return FileResponse(
                     filename,
-                    as_attachment=True,
-                    download_name=sanitize_filename(os.path.basename(filename))
+                    media_type='application/octet-stream',
+                    filename=sanitize_filename(os.path.basename(filename))
                 )
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-if __name__ == '__main__':
-    app.run(debug=True)
+        raise HTTPException(status_code=500, detail=str(e))
